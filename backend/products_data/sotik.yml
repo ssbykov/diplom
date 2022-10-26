@@ -1,0 +1,30 @@
+shop: Сотик
+categories:
+  - id: 224
+    name: Смартфоны
+  - id: 15
+    name: Аксессуары
+  - id: 1
+    name: Flash-накопители
+
+goods:
+  - category: 15
+    model: Смартфон Apple iPhone XS Max
+    name: Чехол
+    price: 5000
+    price_rrc: 5100
+    quantity: 10
+    parameters:
+      "материал": кожа
+      "Цвет": черный
+  - category: 224
+    model: apple/iphone/xr
+    name: Смартфон Apple iPhone XR 256GB (красный)
+    price: 65000
+    price_rrc: 69990
+    quantity: 1
+    parameters:
+      "Диагональ (дюйм)": 6.1
+      "Разрешение (пикс)": 1792x828
+      "Встроенная память (Гб)": 256
+      "Цвет": красный
