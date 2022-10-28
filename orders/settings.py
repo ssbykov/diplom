@@ -142,7 +142,7 @@ AUTH_USER_MODEL = 'backend.User'
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
-    'SEND_ACTIVATION_EMAIL': True,
+    'SEND_ACTIVATION_EMAIL': False,
     'ACTIVATION_URL': '#/activate/{uid}/{token}',
 
 }

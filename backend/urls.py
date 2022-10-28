@@ -1,6 +1,6 @@
 from django.urls import path
 
-from backend.views import CategoryView, PartnerUpdate, ShopView, ProductInfoView, ContactView, PartnerState
+from backend.views import CategoryView, PartnerUpdate, ShopView, ProductInfoView, ContactView, PartnerState, BasketView
 
 app_name = 'backend'
 urlpatterns = [
@@ -12,5 +12,7 @@ urlpatterns = [
     path('user/contact/<int:pk>/', ContactView.as_view({'delete': 'destroy', 'put': 'update'}), name='contact'),
     path('partner/update/', PartnerUpdate.as_view(), name='partner-update'),
     path('partner/state/', PartnerState.as_view({'get': 'list', 'patch': 'update'}), name='partner-state'),
+    path('basket/', BasketView.as_view({'get': 'list', 'post': 'create'}), name='basket'),
+    path('basket/<int:pk>/', BasketView.as_view({'delete': 'destroy', 'put': 'update'}), name='basket-item'),
 
 ]

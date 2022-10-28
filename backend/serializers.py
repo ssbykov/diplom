@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from backend.models import Category, Shop, Product, ProductParameter, ProductInfo, Contact
+from backend.models import Category, Shop, Product, ProductParameter, ProductInfo, Contact, Order, OrderItem
 
 
 class CategorySerializer(serializers.ModelSerializer):
@@ -51,3 +51,42 @@ class ContactSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'user': {'write_only': True}
         }
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = OrderItem
+        fields = ('id', 'product_info', 'quantity', 'order',)
+        read_only_fields = ('id',)
+        extra_kwargs = {
+            'order': {'write_only': True}
+        }
+
+    # def create(self, validated_data):
+    #     # ordered_items = validated_data.pop('ordered_items')
+    #     # order = super().create(validated_data)
+    #     basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
+    #
+    #     for item in self.request.data:
+    #         OrderItem(
+    #             quantity=item['quantity'],
+    #             product_id=item['product_info'],
+    #             order_id=basket.id
+    #         ).save()
+    #     return basket
+
+
+class OrderItemCreateSerializer(OrderItemSerializer):
+    product_info = ProductInfoSerializer(read_only=True)
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    ordered_items = OrderItemCreateSerializer(read_only=True, many=True)
+
+    total_sum = serializers.IntegerField()
+    contact = ContactSerializer(read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ('id', 'ordered_items', 'state', 'dt', 'total_sum', 'contact',)
+        read_only_fields = ('id',)
+

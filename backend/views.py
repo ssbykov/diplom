@@ -1,24 +1,21 @@
-import django_filters
 import yaml
-from django.core.validators import FileExtensionValidator
+from django.db.models import Q, Sum, F
 from django.http import JsonResponse
-from django.shortcuts import render
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import mixins, permissions, viewsets
-from rest_framework.generics import ListAPIView, get_object_or_404, RetrieveUpdateAPIView
+from rest_framework import permissions, viewsets, status
+from rest_framework.generics import ListAPIView, get_object_or_404
 from django.http import Http404
-from rest_framework.mixins import CreateModelMixin, UpdateModelMixin
 from rest_framework.views import APIView
 from yaml.loader import SafeLoader
 from pathlib import Path
-from django.db.models import Q, Sum, F
 from rest_framework.response import Response
 from rest_framework import filters
 
 from backend.filters import ProductFilterPrice
-from backend.models import Category, Shop, ProductInfo, Product, Parameter, ProductParameter, Contact
-from backend.permissions import IsOwnerOrReadOnly
-from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer
+from backend.models import Category, Shop, ProductInfo, Product, Parameter, ProductParameter, Contact, Order, OrderItem
+from backend.permissions import IsOwnerOrReadOnly, IsBuyer, IsOwner
+from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
+    OrderItemSerializer, OrderSerializer
 
 
 class CategoryView(ListAPIView):
@@ -108,7 +105,6 @@ class ProductInfoView(viewsets.ModelViewSet):
 class ContactView(viewsets.ModelViewSet):
     serializer_class = ContactSerializer
     queryset = Contact.objects.all()
-    permission_classes = [permissions.IsAuthenticated]
 
     def list(self, request):
         queryset = Contact.objects.filter(user_id=self.request.user.id)
@@ -118,7 +114,8 @@ class ContactView(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ["destroy", "update", "partial_update"]:
             return (IsOwnerOrReadOnly(),)
-        return []
+        else:
+            return (permissions.IsAuthenticated(),)
 
     def get_serializer_context(self):
         self.request.data._mutable = True
@@ -129,26 +126,19 @@ class ContactView(viewsets.ModelViewSet):
             'format': self.format_kwarg,
             'view': self
         }
-    #
-    # def get_object(self):
-    #     queryset = self.get_queryset()
-    #     lookup_url_kwarg = self.lookup_url_kwarg or self.lookup_field
-    #     filter_kwargs = {self.lookup_field: self.kwargs[lookup_url_kwarg]}
-    #     obj = get_object_or_404(queryset, **filter_kwargs)
-    #     if obj.user_id != self.request.user.id:
-    #         raise Http404
-    #     return obj
 
 
 class PartnerState(viewsets.ModelViewSet):
     serializer_class = ShopSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
     def list(self, request):
-        queryset = Shop.objects.filter(user_id = self.request.user.id)
+        queryset = Shop.objects.filter(user_id=self.request.user.id)
         serializer = ShopSerializer(queryset, many=True)
         return Response(serializer.data)
 
     def get_object(self):
-        queryset = Shop.objects.filter(user_id = self.request.user.id)
+        queryset = Shop.objects.filter(user_id=self.request.user.id)
         self.request.data._mutable = True
         self.request.data.update({'name': queryset[0].name})
         obj = get_object_or_404(queryset)
@@ -156,6 +146,41 @@ class PartnerState(viewsets.ModelViewSet):
             raise Http404
         return obj
 
-    def get_queryset(self):
-        queryset = Shop.objects.filter(user_id = self.request.user.id)
-        return queryset
+
+class BasketView(viewsets.ModelViewSet):
+    # queryset = Order.objects.all()
+
+    def create(self, request, *args, **kwargs):
+        basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
+        self.request.data._mutable = True
+        self.request.data.update({'order': basket.id})
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def list(self, request):
+        queryset = Order.objects.filter(user_id=self.request.user.id).annotate(
+            total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
+        serializer = self.get_serializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def get_permissions(self):
+        permission_classes = [permissions.IsAuthenticated(), IsBuyer()]
+        if self.action != "create":
+            permission_classes.append(IsOwner())
+        return permission_classes
+
+    def get_object(self):
+        basket = Order.objects.get(user_id=self.request.user.id, state='basket')
+        if basket:
+            query = Q() | Q(order_id=basket.id, id=self.kwargs['pk'])
+            queryset = OrderItem.objects.filter(query)
+            obj = get_object_or_404(queryset)
+            return obj
+
+    def get_serializer(self, *args, **kwargs):
+        if self.action == 'list':
+            return OrderSerializer(*args, **kwargs)
+        return OrderItemSerializer(*args, **kwargs)
