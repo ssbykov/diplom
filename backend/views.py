@@ -13,9 +13,10 @@ from rest_framework import filters
 
 from backend.filters import ProductFilterPrice
 from backend.models import Category, Shop, ProductInfo, Product, Parameter, ProductParameter, Contact, Order, OrderItem
-from backend.permissions import IsOwnerOrReadOnly, IsBuyer, IsOwner
+from backend.permissions import IsOwnerOrReadOnly, IsBuyer, IsOwnerBuyer
 from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
-    OrderItemSerializer, OrderSerializer
+    OrderItemSerializer, OrderSerializer, OrderNewSerializer
+from backend.signals import new_order
 
 
 class CategoryView(ListAPIView):
@@ -148,7 +149,8 @@ class PartnerState(viewsets.ModelViewSet):
 
 
 class BasketView(viewsets.ModelViewSet):
-    # queryset = Order.objects.all()
+    queryset = Order.objects.all()
+    permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
     def create(self, request, *args, **kwargs):
         basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
@@ -166,12 +168,6 @@ class BasketView(viewsets.ModelViewSet):
         serializer = self.get_serializer(queryset, many=True)
         return Response(serializer.data)
 
-    def get_permissions(self):
-        permission_classes = [permissions.IsAuthenticated(), IsBuyer()]
-        if self.action != "create":
-            permission_classes.append(IsOwner())
-        return permission_classes
-
     def get_object(self):
         basket = Order.objects.get(user_id=self.request.user.id, state='basket')
         if basket:
@@ -184,3 +180,33 @@ class BasketView(viewsets.ModelViewSet):
         if self.action == 'list':
             return OrderSerializer(*args, **kwargs)
         return OrderItemSerializer(*args, **kwargs)
+
+
+class OrderView(viewsets.ModelViewSet):
+    serializer_class = OrderSerializer
+    permission_classes = [permissions.IsAuthenticated, IsBuyer]
+
+    def list(self, request):
+        queryset = Order.objects.filter(
+            user_id=request.user.id).exclude(state='basket').prefetch_related(
+            'ordered_items__product_info__product__category',
+            'ordered_items__product_info__product_parameters__parameter').select_related('contact').annotate(
+            total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
+        serializer = self.get_serializer(queryset, many=True)
+        if serializer.data:
+            return Response(serializer.data)
+        return JsonResponse({'Status': 'Нет активных заказов'})
+
+    def update(self, request, *args, **kwargs):
+        is_updated = Order.objects.filter(
+            user_id=self.request.user.id, id=self.kwargs['pk']).first()
+        if is_updated and Contact.objects.filter(id=self.request.data['contact'], user_id=self.request.user.id)\
+                and is_updated.state == 'basket':
+            self.request.data._mutable = True
+            self.request.data.update({'state': 'new'})
+            serializer = OrderNewSerializer(is_updated, data=self.request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            new_order.send(sender=self.__class__, user_id=request.user.id)
+            return Response(serializer.data)
+        return JsonResponse({'Status': 'Неправильные данные по заказу'})

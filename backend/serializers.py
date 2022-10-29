@@ -52,6 +52,7 @@ class ContactSerializer(serializers.ModelSerializer):
             'user': {'write_only': True}
         }
 
+
 class OrderItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
@@ -90,3 +91,9 @@ class OrderSerializer(serializers.ModelSerializer):
         fields = ('id', 'ordered_items', 'state', 'dt', 'total_sum', 'contact',)
         read_only_fields = ('id',)
 
+
+class OrderNewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Order
+        fields = ('id', 'contact', 'state',)
+        read_only_fields = ('id',)
