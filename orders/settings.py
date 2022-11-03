@@ -49,7 +49,7 @@ INSTALLED_APPS = [
     'rest_framework.authtoken',
     'django_filters',
     'djoser',
-    # 'django_rest_passwordreset',
+
 ]
 
 MIDDLEWARE = [
@@ -142,7 +142,7 @@ AUTH_USER_MODEL = 'backend.User'
 
 DJOSER = {
     'LOGIN_FIELD': 'email',
-    'SEND_ACTIVATION_EMAIL': False,
+    'SEND_ACTIVATION_EMAIL': True,
     'ACTIVATION_URL': '#/activate/{uid}/{token}',
 
 }

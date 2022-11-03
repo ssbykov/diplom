@@ -1,10 +1,12 @@
 import yaml
 from django.db.models import Q, Sum, F
+from django.db import IntegrityError
 from django.http import JsonResponse
 from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import permissions, viewsets, status
 from rest_framework.generics import ListAPIView, get_object_or_404
 from django.http import Http404
+from rest_framework.mixins import ListModelMixin, UpdateModelMixin
 from rest_framework.views import APIView
 from yaml.loader import SafeLoader
 from pathlib import Path
@@ -13,7 +15,7 @@ from rest_framework import filters
 
 from backend.filters import ProductFilterPrice
 from backend.models import Category, Shop, ProductInfo, Product, Parameter, ProductParameter, Contact, Order, OrderItem
-from backend.permissions import IsOwnerOrReadOnly, IsBuyer, IsOwnerBuyer
+from backend.permissions import IsOwnerOrReadOnly, IsBuyer
 from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
     OrderItemSerializer, OrderSerializer, OrderNewSerializer
 from backend.signals import new_order
@@ -49,17 +51,6 @@ class PartnerUpdate(APIView):
         if request.user.type != 'shop':
             return JsonResponse({'Status': False, 'Error': 'Только для магазинов'}, status=403)
 
-        # url = request.data.get('url')
-        # if url:
-        #     validate_url = URLValidator()
-        #     try:
-        #         validate_url(url)
-        #     except ValidationError as e:
-        #         return JsonResponse({'Status': False, 'Error': str(e)})
-        #     else:
-        #         stream = get(url).content
-        #
-        #         data = load_yaml(stream, Loader=Loader)
         filename = request.data.get('filename')
         if filename:
             file_path = Path(__file__).parent.absolute()
@@ -96,6 +87,9 @@ class PartnerUpdate(APIView):
 
 
 class ProductInfoView(viewsets.ModelViewSet):
+    """
+    Класс для просмотра информации о товаре
+    """
     serializer_class = ProductInfoSerializer
     queryset = ProductInfo.objects.all()
     filter_backends = (DjangoFilterBackend, filters.SearchFilter,)
@@ -104,6 +98,10 @@ class ProductInfoView(viewsets.ModelViewSet):
 
 
 class ContactView(viewsets.ModelViewSet):
+    """
+    Класс для работы с контактами покупателей
+    """
+
     serializer_class = ContactSerializer
     queryset = Contact.objects.all()
 
@@ -130,6 +128,10 @@ class ContactView(viewsets.ModelViewSet):
 
 
 class PartnerState(viewsets.ModelViewSet):
+    """
+    Класс для работы со статусом поставщика
+    """
+
     serializer_class = ShopSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -149,6 +151,10 @@ class PartnerState(viewsets.ModelViewSet):
 
 
 class BasketView(viewsets.ModelViewSet):
+    """
+    Класс для работы с корзиной пользователя
+    """
+
     queryset = Order.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
@@ -158,7 +164,10 @@ class BasketView(viewsets.ModelViewSet):
         self.request.data.update({'order': basket.id})
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError as er:
+            return JsonResponse({'Status': 'Данная позиция уже добавлена'})
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
@@ -169,12 +178,13 @@ class BasketView(viewsets.ModelViewSet):
         return Response(serializer.data)
 
     def get_object(self):
-        basket = Order.objects.get(user_id=self.request.user.id, state='basket')
+        basket = Order.objects.filter(user_id=self.request.user.id, state='basket').first()
         if basket:
             query = Q() | Q(order_id=basket.id, id=self.kwargs['pk'])
             queryset = OrderItem.objects.filter(query)
             obj = get_object_or_404(queryset)
             return obj
+        raise Http404
 
     def get_serializer(self, *args, **kwargs):
         if self.action == 'list':
@@ -182,7 +192,13 @@ class BasketView(viewsets.ModelViewSet):
         return OrderItemSerializer(*args, **kwargs)
 
 
-class OrderView(viewsets.ModelViewSet):
+class OrderView(UpdateModelMixin,
+                ListModelMixin,
+                viewsets.GenericViewSet):
+    """
+    Класс для получения и размешения заказов пользователями
+    """
+
     serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
@@ -200,13 +216,13 @@ class OrderView(viewsets.ModelViewSet):
     def update(self, request, *args, **kwargs):
         is_updated = Order.objects.filter(
             user_id=self.request.user.id, id=self.kwargs['pk']).first()
-        if is_updated and Contact.objects.filter(id=self.request.data['contact'], user_id=self.request.user.id)\
+        if is_updated and Contact.objects.filter(id=self.request.data['contact'], user_id=self.request.user.id) \
                 and is_updated.state == 'basket':
             self.request.data._mutable = True
             self.request.data.update({'state': 'new'})
             serializer = OrderNewSerializer(is_updated, data=self.request.data)
             serializer.is_valid(raise_exception=True)
             self.perform_update(serializer)
-            new_order.send(sender=self.__class__, user_id=request.user.id)
+            new_order.send(sender=self.__class__, user_id=request.user.id, order=self.kwargs['pk'])
             return Response(serializer.data)
         return JsonResponse({'Status': 'Неправильные данные по заказу'})

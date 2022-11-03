@@ -62,19 +62,6 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'order': {'write_only': True}
         }
 
-    # def create(self, validated_data):
-    #     # ordered_items = validated_data.pop('ordered_items')
-    #     # order = super().create(validated_data)
-    #     basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
-    #
-    #     for item in self.request.data:
-    #         OrderItem(
-    #             quantity=item['quantity'],
-    #             product_id=item['product_info'],
-    #             order_id=basket.id
-    #         ).save()
-    #     return basket
-
 
 class OrderItemCreateSerializer(OrderItemSerializer):
     product_info = ProductInfoSerializer(read_only=True)

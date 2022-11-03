@@ -1,10 +1,7 @@
-from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.validators import UnicodeUsernameValidator
-from django.core.validators import FileExtensionValidator
 from django.db import models
 from django.utils.translation import gettext_lazy as _
-from django_rest_passwordreset.tokens import get_token_generator
 
 STATE_CHOICES = (
     ('basket', 'Статус корзины'),
@@ -24,42 +21,6 @@ USER_TYPE_CHOICES = (
 
 
 # Create your models here.
-
-
-# class UserManager(BaseUserManager):
-#     """
-#     Миксин для управления пользователями
-#     """
-#     use_in_migrations = True
-#
-#     def _create_user(self, email, password, **extra_fields):
-#         """
-#         Create and save a user with the given username, email, and password.
-#         """
-#         if not email:
-#             raise ValueError('The given email must be set')
-#         email = self.normalize_email(email)
-#         user = self.model(email=email, **extra_fields)
-#         user.set_password(password)
-#         user.save(using=self._db)
-#         return user
-#
-#     def create_user(self, email, password=None, **extra_fields):
-#         extra_fields.setdefault('is_staff', False)
-#         extra_fields.setdefault('is_superuser', False)
-#         return self._create_user(email, password, **extra_fields)
-#
-#     def create_superuser(self, email, password, **extra_fields):
-#         extra_fields.setdefault('is_staff', True)
-#         extra_fields.setdefault('is_superuser', True)
-#
-#         if extra_fields.get('is_staff') is not True:
-#             raise ValueError('Superuser must have is_staff=True.')
-#         if extra_fields.get('is_superuser') is not True:
-#             raise ValueError('Superuser must have is_superuser=True.')
-#
-#         return self._create_user(email, password, **extra_fields)
-
 
 class User(AbstractUser):
     """
@@ -94,7 +55,7 @@ class User(AbstractUser):
 
     class Meta:
         verbose_name = 'Пользователь'
-        verbose_name_plural = "Список пользователей"
+        verbose_name_plural = "Пользователи"
         ordering = ('email',)
 
 
@@ -110,7 +71,7 @@ class Shop(models.Model):
     class Meta:
         verbose_name = 'Магазин'
         verbose_name_plural = "Список магазинов"
-        # ordering = ('-name',)
+        ordering = ('-name',)
 
     def __str__(self):
         return self.name
@@ -123,7 +84,6 @@ class Category(models.Model):
     class Meta:
         verbose_name = 'Категория'
         verbose_name_plural = "Список категорий"
-        # ordering = ('-name',)
 
     def __str__(self):
         return self.name
@@ -155,11 +115,15 @@ class ProductInfo(models.Model):
 
     class Meta:
         verbose_name = 'Информация о продукте'
-        verbose_name_plural = "Информационный список о продуктах"
+        verbose_name_plural = "Товары"
         constraints = [
             models.UniqueConstraint(fields=['product', 'shop'], name='unique_product_info'),
         ]
         ordering = ('shop', 'product__category__name', 'product__name')
+
+    def __str__(self):
+        return str(self.product.name)
+
 
 class Parameter(models.Model):
     name = models.CharField(max_length=40, verbose_name='Название')
@@ -167,7 +131,6 @@ class Parameter(models.Model):
     class Meta:
         verbose_name = 'Имя параметра'
         verbose_name_plural = "Список имен параметров"
-        # ordering = ('-name',)
 
     def __str__(self):
         return self.name
@@ -188,6 +151,8 @@ class ProductParameter(models.Model):
             models.UniqueConstraint(fields=['product_info', 'parameter'], name='unique_product_parameter'),
         ]
 
+    def __str__(self):
+        return str(f"Параметр id {self.parameter.id}")
 
 class Contact(models.Model):
     user = models.ForeignKey(User, verbose_name='Пользователь',
@@ -214,7 +179,7 @@ class Order(models.Model):
     user = models.ForeignKey(User, verbose_name='Пользователь',
                              related_name='orders', blank=True,
                              on_delete=models.CASCADE)
-    dt = models.DateTimeField(auto_now_add=True)
+    dt = models.DateTimeField(auto_now_add=True, verbose_name='Дата заказа')
     state = models.CharField(verbose_name='Статус', choices=STATE_CHOICES, max_length=15)
     contact = models.ForeignKey(Contact, verbose_name='Контакт',
                                 blank=True, null=True,
@@ -222,15 +187,13 @@ class Order(models.Model):
 
     class Meta:
         verbose_name = 'Заказ'
-        verbose_name_plural = "Список заказ"
-        ordering = ('-dt',)
+        verbose_name_plural = "Заказы"
+        ordering = ('id', '-dt',)
 
     def __str__(self):
-        return str(self.dt)
+        return str(f"Заказ №{self.id} от {self.dt.strftime('%Y-%m-%d %H:%M:%S')}")
 
-    # @property
-    # def sum(self):
-    #     return self.ordered_items.aggregate(total=Sum("quantity"))["total"]
+
 
 
 class OrderItem(models.Model):
@@ -248,3 +211,6 @@ class OrderItem(models.Model):
         constraints = [
             models.UniqueConstraint(fields=['order_id', 'product_info'], name='unique_order_item'),
         ]
+
+    def __str__(self):
+        return str(self.product_info.product.category)
