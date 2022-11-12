@@ -16,9 +16,15 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include, re_path
 
+from backend.views import UserActivationView  # , CustomRegistrationView
+from .yasg import urlpatterns as doc_urls
+
 urlpatterns = [
     path('admin/', admin.site.urls),
+    re_path(r'^activate/(?P<uid>[\w-]+)/(?P<token>[\w-]+)$', UserActivationView.as_view()),
     path('api/v1/', include('backend.urls', namespace='backend')),
     path(r'api/v1/auth/', include('djoser.urls')),
     re_path(r'^auth/', include('djoser.urls.authtoken')),
 ]
+
+urlpatterns += doc_urls

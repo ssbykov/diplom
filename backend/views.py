@@ -1,4 +1,4 @@
-import yaml
+import requests
 from django.db.models import Q, Sum, F
 from django.db import IntegrityError
 from django.http import JsonResponse
@@ -6,19 +6,28 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import permissions, viewsets, status
 from rest_framework.generics import ListAPIView, get_object_or_404
 from django.http import Http404
-from rest_framework.mixins import ListModelMixin, UpdateModelMixin
 from rest_framework.views import APIView
-from yaml.loader import SafeLoader
-from pathlib import Path
 from rest_framework.response import Response
 from rest_framework import filters
+from rest_framework.decorators import action
 
 from backend.filters import ProductFilterPrice
-from backend.models import Category, Shop, ProductInfo, Product, Parameter, ProductParameter, Contact, Order, OrderItem
+from backend.models import Category, Shop, ProductInfo, Contact, Order, OrderItem
 from backend.permissions import IsOwnerOrReadOnly, IsBuyer
 from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
-    OrderItemSerializer, OrderSerializer, OrderNewSerializer
-from backend.signals import new_order
+    OrderItemSerializer, OrdersListSerializer, OrderNewSerializer, OrderSerializer
+from backend.tasks import do_import, sand_mail
+
+
+class UserActivationView(APIView):
+    def get(self, request, uid, token):
+        protocol = 'https://' if request.is_secure() else 'http://'
+        web_url = protocol + request.get_host()
+        post_url = web_url + "/api/v1/auth/users/activation/"
+        post_data = {'uid': uid, 'token': token}
+        result = requests.post(post_url, data=post_data)
+        content = result.text
+        return Response(content)
 
 
 class CategoryView(ListAPIView):
@@ -53,37 +62,10 @@ class PartnerUpdate(APIView):
 
         filename = request.data.get('filename')
         if filename:
-            file_path = Path(__file__).parent.absolute()
-            try:
-                with open(str(file_path) + filename, encoding='UTF-8') as yml:
-                    data = yaml.load(yml, Loader=SafeLoader)
-            except FileNotFoundError as e:
-                return JsonResponse({'Status': False, 'Error': str(e)})
-            else:
-                shop, _ = Shop.objects.get_or_create(name=data['shop'], user_id=request.user.id)
-                for category in data['categories']:
-                    category_object, _ = Category.objects.get_or_create(id=category['id'], name=category['name'])
-                    category_object.shops.add(shop.id)
-                    category_object.save()
-                ProductInfo.objects.filter(shop_id=shop.id).delete()
-                for item in data['goods']:
-                    product, _ = Product.objects.get_or_create(name=item['name'], category_id=item['category'])
-
-                    product_info = ProductInfo.objects.create(product_id=product.id,
-                                                              model=item['model'],
-                                                              price=item['price'],
-                                                              price_rrc=item['price_rrc'],
-                                                              quantity=item['quantity'],
-                                                              shop_id=shop.id)
-                    for name, value in item['parameters'].items():
-                        parameter_object, _ = Parameter.objects.get_or_create(name=name)
-                        ProductParameter.objects.create(product_info_id=product_info.id,
-                                                        parameter_id=parameter_object.id,
-                                                        value=value)
-
-                return JsonResponse({'Status': True})
-
-        return JsonResponse({'Status': False, 'Errors': 'Не указаны все необходимые аргументы'})
+            do_import.delay(filename, request.user.id)
+            return JsonResponse({'Status': True})
+        else:
+            return JsonResponse({'Status': False, 'Errors': 'Не указаны все необходимые аргументы'})
 
 
 class ProductInfoView(viewsets.ModelViewSet):
@@ -155,13 +137,18 @@ class BasketView(viewsets.ModelViewSet):
     Класс для работы с корзиной пользователя
     """
 
-    queryset = Order.objects.all()
     permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
     def create(self, request, *args, **kwargs):
         basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
-        self.request.data._mutable = True
-        self.request.data.update({'order': basket.id})
+        product_info = self.request.data.get('product_info')
+        if ProductInfo.objects.filter(id=product_info).first():
+            self.request.data._mutable = True
+            self.request.data.update({'order': basket.id})
+        else:
+            return JsonResponse({'Status': 'Данные по товару отсутствуют'})
+        if not ProductInfo.objects.get(id=product_info).shop.state:
+            return JsonResponse({'Status': 'Данный товар недоступен для заказа'})
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
@@ -171,19 +158,39 @@ class BasketView(viewsets.ModelViewSet):
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
+    @action(methods=['patch'], detail=False)
+    def update_new(self, request, *args, **kwargs):
+        is_updated = self.get_object()
+        if is_updated:
+            self.request.data._mutable = True
+            self.request.data.update({'state': 'new'})
+            serializer = OrderNewSerializer(is_updated, data=self.request.data)
+            serializer.is_valid(raise_exception=True)
+            self.perform_update(serializer)
+            sand_mail.delay(
+                request.user.id,
+                f"'Заказ №{is_updated.pk} сформирован'",
+                'Обновление статуса заказа')
+            return Response(serializer.data)
+        return JsonResponse({'Status': 'Неправильные данные по заказу'})
+
     def list(self, request):
-        queryset = Order.objects.filter(user_id=self.request.user.id).annotate(
+        queryset = Order.objects.filter(user_id=self.request.user.id, state='basket').annotate(
             total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
         serializer = self.get_serializer(queryset, many=True)
-        return Response(serializer.data)
+        if serializer.data:
+            return Response(serializer.data)
+        return JsonResponse({'Status': 'Нет оформляемых заказов'})
 
     def get_object(self):
-        basket = Order.objects.filter(user_id=self.request.user.id, state='basket').first()
-        if basket:
-            query = Q() | Q(order_id=basket.id, id=self.kwargs['pk'])
+        basket = Order.objects.filter(user_id=self.request.user.id, state='basket')
+        if basket and 'pk' in self.kwargs:
+            query = Q() | Q(order_id=basket.first().id, id=self.kwargs['pk'])
             queryset = OrderItem.objects.filter(query)
-            obj = get_object_or_404(queryset)
-            return obj
+            return get_object_or_404(queryset)
+        elif basket:
+            return get_object_or_404(basket)
+
         raise Http404
 
     def get_serializer(self, *args, **kwargs):
@@ -192,37 +199,29 @@ class BasketView(viewsets.ModelViewSet):
         return OrderItemSerializer(*args, **kwargs)
 
 
-class OrderView(UpdateModelMixin,
-                ListModelMixin,
-                viewsets.GenericViewSet):
+class OrderView(viewsets.ReadOnlyModelViewSet):
     """
     Класс для получения и размешения заказов пользователями
     """
 
-    serializer_class = OrderSerializer
     permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
-    def list(self, request):
-        queryset = Order.objects.filter(
-            user_id=request.user.id).exclude(state='basket').prefetch_related(
-            'ordered_items__product_info__product__category',
-            'ordered_items__product_info__product_parameters__parameter').select_related('contact').annotate(
-            total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
+    def list(self, queryset):
+        queryset = self.get_queryset()
         serializer = self.get_serializer(queryset, many=True)
         if serializer.data:
             return Response(serializer.data)
         return JsonResponse({'Status': 'Нет активных заказов'})
 
-    def update(self, request, *args, **kwargs):
-        is_updated = Order.objects.filter(
-            user_id=self.request.user.id, id=self.kwargs['pk']).first()
-        if is_updated and Contact.objects.filter(id=self.request.data['contact'], user_id=self.request.user.id) \
-                and is_updated.state == 'basket':
-            self.request.data._mutable = True
-            self.request.data.update({'state': 'new'})
-            serializer = OrderNewSerializer(is_updated, data=self.request.data)
-            serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
-            new_order.send(sender=self.__class__, user_id=request.user.id, order=self.kwargs['pk'])
-            return Response(serializer.data)
-        return JsonResponse({'Status': 'Неправильные данные по заказу'})
+    def get_serializer(self, *args, **kwargs):
+        if self.action == 'list':
+            return OrdersListSerializer(*args, **kwargs)
+        return OrderSerializer(*args, **kwargs)
+
+    def get_queryset(self):
+        queryset = Order.objects.filter(
+            user_id=self.request.user.id).exclude(state='basket').prefetch_related(
+            'ordered_items__product_info__product__category',
+            'ordered_items__product_info__product_parameters__parameter').select_related('contact').annotate(
+            total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
+        return queryset

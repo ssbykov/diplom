@@ -1,6 +1,6 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from django.db.models import Q, Sum, F
+from django.db.models import Sum, F
 
 from .models import Shop, Category, Order, OrderItem, ProductInfo, User, ProductParameter, Contact
 
@@ -26,7 +26,6 @@ class ContactInline(admin.StackedInline):
     )
 
 
-
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = ('order_number', 'user', 'contact', 'dt', 'state', 'order_sum')
@@ -49,7 +48,6 @@ class OrderAdmin(admin.ModelAdmin):
 
     order_sum.short_description = 'Сумма'
     order_number.short_description = 'Заказ №'
-
 
 
 @admin.register(ProductInfo)
@@ -78,6 +76,7 @@ class CustomUserAdmin(UserAdmin):
     )
     list_display = ('email', 'first_name', 'last_name', 'is_staff')
     inlines = [ContactInline]
+
 
 admin.site.register(Shop)
 admin.site.register(Category)
