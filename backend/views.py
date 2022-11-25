@@ -99,8 +99,9 @@ class ContactView(viewsets.ModelViewSet):
             return (permissions.IsAuthenticated(),)
 
     def get_serializer_context(self):
-        self.request.data._mutable = True
-        self.request.data.update({'user': self.request.user.id})
+        if self.request.data:
+            self.request.data._mutable = True
+            self.request.data.update({'user': self.request.user.id})
         serializer = ContactSerializer(data=self.request.data)
         return {
             'request': self.request,
