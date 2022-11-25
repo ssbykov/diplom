@@ -99,9 +99,9 @@ class ContactView(viewsets.ModelViewSet):
             return (permissions.IsAuthenticated(),)
 
     def get_serializer_context(self):
-        if self.request.data:
+        if hasattr(self.request.data, '_mutable'):
             self.request.data._mutable = True
-            self.request.data.update({'user': self.request.user.id})
+        self.request.data.update({'user': self.request.user.id})
         serializer = ContactSerializer(data=self.request.data)
         return {
             'request': self.request,
@@ -116,7 +116,7 @@ class PartnerState(viewsets.ModelViewSet):
     """
 
     serializer_class = ShopSerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
 
     def list(self, request):
         queryset = Shop.objects.filter(user_id=self.request.user.id)
@@ -125,7 +125,8 @@ class PartnerState(viewsets.ModelViewSet):
 
     def get_object(self):
         queryset = Shop.objects.filter(user_id=self.request.user.id)
-        self.request.data._mutable = True
+        if hasattr(self.request.data, '_mutable'):
+            self.request.data._mutable = True
         self.request.data.update({'name': queryset[0].name})
         obj = get_object_or_404(queryset)
         if obj.user_id != self.request.user.id:
@@ -144,7 +145,8 @@ class BasketView(viewsets.ModelViewSet):
         basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
         product_info = self.request.data.get('product_info')
         if ProductInfo.objects.filter(id=product_info).first():
-            self.request.data._mutable = True
+            if hasattr(self.request.data, '_mutable'):
+                self.request.data._mutable = True
             self.request.data.update({'order': basket.id})
         else:
             return JsonResponse({'Status': 'Данные по товару отсутствуют'})
@@ -163,7 +165,8 @@ class BasketView(viewsets.ModelViewSet):
     def update_new(self, request, *args, **kwargs):
         is_updated = self.get_object()
         if is_updated:
-            self.request.data._mutable = True
+            if hasattr(self.request.data, '_mutable'):
+                self.request.data._mutable = True
             self.request.data.update({'state': 'new'})
             serializer = OrderNewSerializer(is_updated, data=self.request.data)
             serializer.is_valid(raise_exception=True)
