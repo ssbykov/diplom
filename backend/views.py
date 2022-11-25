@@ -2,9 +2,11 @@ import requests
 from django.db.models import Q, Sum, F
 from django.db import IntegrityError
 from django.http import JsonResponse
+from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
+from drf_yasg.utils import swagger_auto_schema
 from rest_framework import permissions, viewsets, status
-from rest_framework.generics import ListAPIView, get_object_or_404
+from rest_framework.generics import ListAPIView, get_object_or_404, RetrieveUpdateAPIView
 from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -110,24 +112,21 @@ class ContactView(viewsets.ModelViewSet):
         }
 
 
-class PartnerState(viewsets.ModelViewSet):
+@method_decorator(name='put', decorator=swagger_auto_schema(
+                     operation_description="Изменение имени и статуса поставщика"
+                     ))
+@method_decorator(name='patch', decorator=swagger_auto_schema(
+                     operation_description="Изменение статуса поставщика",
+                     ))
+class PartnerState(RetrieveUpdateAPIView):
     """
     Класс для работы со статусом поставщика
     """
-
     serializer_class = ShopSerializer
     permission_classes = [permissions.IsAuthenticated, IsOwnerOrReadOnly]
 
-    def list(self, request):
-        queryset = Shop.objects.filter(user_id=self.request.user.id)
-        serializer = ShopSerializer(queryset, many=True)
-        return Response(serializer.data)
-
     def get_object(self):
         queryset = Shop.objects.filter(user_id=self.request.user.id)
-        if hasattr(self.request.data, '_mutable'):
-            self.request.data._mutable = True
-        self.request.data.update({'name': queryset[0].name})
         obj = get_object_or_404(queryset)
         if obj.user_id != self.request.user.id:
             raise Http404
