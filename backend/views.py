@@ -100,16 +100,6 @@ class ContactView(viewsets.ModelViewSet):
         else:
             return (permissions.IsAuthenticated(),)
 
-    def get_serializer_context(self):
-        if hasattr(self.request.data, '_mutable'):
-            self.request.data._mutable = True
-        self.request.data.update({'user': self.request.user.id})
-        serializer = ContactSerializer(data=self.request.data)
-        return {
-            'request': self.request,
-            'format': self.format_kwarg,
-            'view': self
-        }
 
 
 @method_decorator(name='put', decorator=swagger_auto_schema(
@@ -143,33 +133,24 @@ class BasketView(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         basket, _ = Order.objects.get_or_create(user_id=self.request.user.id, state='basket')
         product_info = self.request.data.get('product_info')
-        if ProductInfo.objects.filter(id=product_info).first():
-            if hasattr(self.request.data, '_mutable'):
-                self.request.data._mutable = True
-            self.request.data.update({'order': basket.id})
-        else:
+        if not ProductInfo.objects.filter(id=product_info).first():
             return JsonResponse({'Status': 'Данные по товару отсутствуют'})
         if not ProductInfo.objects.get(id=product_info).shop.state:
             return JsonResponse({'Status': 'Данный товар недоступен для заказа'})
-        serializer = self.get_serializer(data=request.data)
+        instance = OrderItem.objects.filter(product_info=product_info, order_id=basket.id).first()
+        serializer = OrderItemSerializer(data=request.data, context={'order': basket}, instance=instance)
         serializer.is_valid(raise_exception=True)
-        try:
-            self.perform_create(serializer)
-        except IntegrityError as er:
-            return JsonResponse({'Status': 'Данная позиция уже добавлена'})
+        serializer.save()
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
 
     @action(methods=['patch'], detail=False)
     def update_new(self, request, *args, **kwargs):
-        is_updated = self.get_object()
+        is_updated = Order.objects.filter(user_id=self.request.user.id, state='basket').first()
         if is_updated:
-            if hasattr(self.request.data, '_mutable'):
-                self.request.data._mutable = True
-            self.request.data.update({'state': 'new'})
-            serializer = OrderNewSerializer(is_updated, data=self.request.data)
+            serializer = OrderNewSerializer(instance=is_updated, data=self.request.data)
             serializer.is_valid(raise_exception=True)
-            self.perform_update(serializer)
+            serializer.save()
             sand_mail.delay(
                 request.user.id,
                 f"'Заказ №{is_updated.pk} сформирован'",
@@ -181,9 +162,7 @@ class BasketView(viewsets.ModelViewSet):
         queryset = Order.objects.filter(user_id=self.request.user.id, state='basket').annotate(
             total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
         serializer = self.get_serializer(queryset, many=True)
-        if serializer.data:
-            return Response(serializer.data)
-        return JsonResponse({'Status': 'Нет оформляемых заказов'})
+        return Response(serializer.data)
 
     def get_object(self):
         basket = Order.objects.filter(user_id=self.request.user.id, state='basket')
@@ -204,7 +183,7 @@ class BasketView(viewsets.ModelViewSet):
 
 class OrderView(viewsets.ReadOnlyModelViewSet):
     """
-    Класс для получения и размешения заказов пользователями
+    Класс для получения информации по заказам пользователя
     """
 
     permission_classes = [permissions.IsAuthenticated, IsBuyer]

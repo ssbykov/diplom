@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from rest_framework.fields import CurrentUserDefault
 
 from backend.models import Category, Shop, Product, ProductParameter, ProductInfo, Contact, Order, OrderItem
 
@@ -44,6 +45,7 @@ class ProductInfoSerializer(serializers.ModelSerializer):
 
 
 class ContactSerializer(serializers.ModelSerializer):
+    user = serializers.HiddenField(default=CurrentUserDefault())
     class Meta:
         model = Contact
         fields = ('id', 'city', 'street', 'house', 'structure', 'building', 'apartment', 'user', 'phone')
@@ -54,6 +56,7 @@ class ContactSerializer(serializers.ModelSerializer):
 
 
 class OrderItemSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = OrderItem
         fields = ('id', 'product_info', 'quantity', 'order',)
@@ -62,13 +65,20 @@ class OrderItemSerializer(serializers.ModelSerializer):
             'order': {'write_only': True}
         }
 
+    def create(self, validated_data):
+        order = OrderItem(
+            quantity=validated_data['quantity'],
+            order=self.context['order'],
+            product_info=validated_data['product_info']
+        )
+        order.save()
+        return order
 
 class OrderItemCreateSerializer(OrderItemSerializer):
     product_info = ProductInfoSerializer(read_only=True)
 
 
 class OrdersListSerializer(serializers.ModelSerializer):
-    # ordered_items = OrderItemCreateSerializer(read_only=True, many=True)
 
     total_sum = serializers.IntegerField()
     contact = ContactSerializer(read_only=True)
@@ -85,5 +95,9 @@ class OrderSerializer(OrdersListSerializer):
 class OrderNewSerializer(serializers.ModelSerializer):
     class Meta:
         model = Order
-        fields = ('id', 'contact', 'state',)
+        fields = ('id', 'contact',)
         read_only_fields = ('id',)
+    def update(self, instance, validated_data ):
+        instance.state = 'new'
+        instance.save()
+        return instance
