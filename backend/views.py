@@ -5,8 +5,9 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
-from rest_framework import permissions, viewsets, status
+from rest_framework import permissions, viewsets, status, mixins
 from rest_framework.generics import ListAPIView, get_object_or_404, RetrieveUpdateAPIView
+from rest_framework.viewsets import GenericViewSet
 from django.http import Http404
 from rest_framework.views import APIView
 from rest_framework.response import Response
@@ -17,7 +18,7 @@ from backend.filters import ProductFilterPrice
 from backend.models import Category, Shop, ProductInfo, Contact, Order, OrderItem
 from backend.permissions import IsOwnerOrReadOnly, IsBuyer
 from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
-    OrderItemSerializer, OrdersListSerializer, OrderNewSerializer, OrderSerializer
+    OrderItemSerializer, OrdersListSerializer, OrderNewSerializer, OrderSerializer, OrderItemCreateSerializer
 from backend.tasks import do_import, sand_mail
 
 
@@ -101,13 +102,12 @@ class ContactView(viewsets.ModelViewSet):
             return (permissions.IsAuthenticated(),)
 
 
-
 @method_decorator(name='put', decorator=swagger_auto_schema(
-                     operation_description="Изменение имени и статуса поставщика"
-                     ))
+    operation_description="Изменение имени и статуса поставщика"
+))
 @method_decorator(name='patch', decorator=swagger_auto_schema(
-                     operation_description="Изменение статуса поставщика",
-                     ))
+    operation_description="Изменение статуса поставщика",
+))
 class PartnerState(RetrieveUpdateAPIView):
     """
     Класс для работы со статусом поставщика
@@ -122,12 +122,23 @@ class PartnerState(RetrieveUpdateAPIView):
             raise Http404
         return obj
 
-
-class BasketView(viewsets.ModelViewSet):
+@method_decorator(name='update_new', decorator=swagger_auto_schema(
+    operation_description="Подтверждение заказа с указанием контакта",
+))
+@method_decorator(name='create', decorator=swagger_auto_schema(
+    operation_description="Добавление или редактирование товара в корзине",
+))
+@method_decorator(name='retrieve', decorator=swagger_auto_schema(
+    operation_description="Промотр данных по товару в корзине",
+))
+class BasketView(mixins.CreateModelMixin,
+                 mixins.RetrieveModelMixin,
+                 mixins.DestroyModelMixin,
+                 mixins.ListModelMixin,
+                 GenericViewSet):
     """
     Класс для работы с корзиной пользователя
     """
-
     permission_classes = [permissions.IsAuthenticated, IsBuyer]
 
     def create(self, request, *args, **kwargs):
@@ -138,7 +149,7 @@ class BasketView(viewsets.ModelViewSet):
         if not ProductInfo.objects.get(id=product_info).shop.state:
             return JsonResponse({'Status': 'Данный товар недоступен для заказа'})
         instance = OrderItem.objects.filter(product_info=product_info, order_id=basket.id).first()
-        serializer = OrderItemSerializer(data=request.data, context={'order': basket}, instance=instance)
+        serializer = OrderItemCreateSerializer(data=request.data, context={'order': basket}, instance=instance)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         headers = self.get_success_headers(serializer.data)
@@ -155,7 +166,7 @@ class BasketView(viewsets.ModelViewSet):
                 request.user.id,
                 f"'Заказ №{is_updated.pk} сформирован'",
                 'Обновление статуса заказа')
-            return Response(serializer.data)
+            return Response({'Status': 'Заказ сформирован'})
         return JsonResponse({'Status': 'Неправильные данные по заказу'})
 
     def list(self, request):
@@ -178,7 +189,15 @@ class BasketView(viewsets.ModelViewSet):
     def get_serializer(self, *args, **kwargs):
         if self.action == 'list':
             return OrderSerializer(*args, **kwargs)
-        return OrderItemSerializer(*args, **kwargs)
+        elif self.action == 'retrieve':
+            return OrderItemSerializer(*args, **kwargs)
+        elif self.action == 'update_new':
+            return OrderNewSerializer(*args, **kwargs)
+        return OrderItemCreateSerializer(*args, **kwargs)
+
+    def get_queryset(self):
+        queryset = Order.objects.filter(user_id=self.request.user.id, state='basket')
+        return queryset
 
 
 class OrderView(viewsets.ReadOnlyModelViewSet):

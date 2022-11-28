@@ -46,6 +46,7 @@ class ProductInfoSerializer(serializers.ModelSerializer):
 
 class ContactSerializer(serializers.ModelSerializer):
     user = serializers.HiddenField(default=CurrentUserDefault())
+
     class Meta:
         model = Contact
         fields = ('id', 'city', 'street', 'house', 'structure', 'building', 'apartment', 'user', 'phone')
@@ -55,15 +56,14 @@ class ContactSerializer(serializers.ModelSerializer):
         }
 
 
-class OrderItemSerializer(serializers.ModelSerializer):
-
+class OrderItemCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = OrderItem
         fields = ('id', 'product_info', 'quantity', 'order',)
-        read_only_fields = ('id',)
-        extra_kwargs = {
-            'order': {'write_only': True}
-        }
+        read_only_fields = ('id', 'order')
+        # extra_kwargs = {
+        #     'order': {'write_only': True}
+        # }
 
     def create(self, validated_data):
         order = OrderItem(
@@ -74,12 +74,8 @@ class OrderItemSerializer(serializers.ModelSerializer):
         order.save()
         return order
 
-class OrderItemCreateSerializer(OrderItemSerializer):
-    product_info = ProductInfoSerializer(read_only=True)
-
 
 class OrdersListSerializer(serializers.ModelSerializer):
-
     total_sum = serializers.IntegerField()
     contact = ContactSerializer(read_only=True)
 
@@ -88,8 +84,13 @@ class OrdersListSerializer(serializers.ModelSerializer):
         fields = ('id', 'ordered_items', 'state', 'dt', 'total_sum', 'contact',)
         read_only_fields = ('id',)
 
+
+class OrderItemSerializer(OrderItemCreateSerializer):
+    product_info = ProductInfoSerializer(read_only=True)
+
+
 class OrderSerializer(OrdersListSerializer):
-    ordered_items = OrderItemCreateSerializer(read_only=True, many=True)
+    ordered_items = OrderItemSerializer(read_only=True, many=True)
 
 
 class OrderNewSerializer(serializers.ModelSerializer):
@@ -97,7 +98,8 @@ class OrderNewSerializer(serializers.ModelSerializer):
         model = Order
         fields = ('id', 'contact',)
         read_only_fields = ('id',)
-    def update(self, instance, validated_data ):
+
+    def update(self, instance, validated_data):
         instance.state = 'new'
         instance.save()
         return instance
