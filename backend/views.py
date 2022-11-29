@@ -4,6 +4,7 @@ from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 from rest_framework import permissions, viewsets, status, mixins
 from rest_framework.generics import ListAPIView, get_object_or_404
 from rest_framework.viewsets import GenericViewSet
@@ -55,6 +56,12 @@ class PartnerUpdate(APIView):
     Класс для обновления прайса от поставщика
     """
 
+    @swagger_auto_schema(request_body=openapi.Schema(
+    type=openapi.TYPE_OBJECT,
+    properties={
+        'filename': openapi.Schema(type=openapi.TYPE_STRING, description='string')
+    }
+    ))
     def post(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return JsonResponse({'Status': False, 'Error': 'Log in required'}, status=403)
