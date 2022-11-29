@@ -17,6 +17,6 @@ urlpatterns = [
     path('shops/', ShopView.as_view(), name='shops'),
     path('', include(router.urls)),
     path('partner/update/', PartnerUpdate.as_view(), name='partner-update'),
-    path('partner/state/', PartnerState.as_view(), name='partner-state'),
+    path('partner/state/', PartnerState.as_view({'get': 'retrieve', 'patch': 'update'}), name='partner-state'),
 
 ]

@@ -1,12 +1,11 @@
 import requests
 from django.db.models import Q, Sum, F
-from django.db import IntegrityError
 from django.http import JsonResponse
 from django.utils.decorators import method_decorator
 from django_filters.rest_framework import DjangoFilterBackend
 from drf_yasg.utils import swagger_auto_schema
 from rest_framework import permissions, viewsets, status, mixins
-from rest_framework.generics import ListAPIView, get_object_or_404, RetrieveUpdateAPIView
+from rest_framework.generics import ListAPIView, get_object_or_404
 from rest_framework.viewsets import GenericViewSet
 from django.http import Http404
 from rest_framework.views import APIView
@@ -46,7 +45,7 @@ class ShopView(ListAPIView):
     """
     Класс для просмотра списка магазинов
     """
-    queryset = Shop.objects.filter(state=True)
+    queryset = Shop.objects.all()
     serializer_class = ShopSerializer
     permission_classes = [permissions.IsAuthenticated]
 
@@ -102,13 +101,9 @@ class ContactView(viewsets.ModelViewSet):
             return (permissions.IsAuthenticated(),)
 
 
-@method_decorator(name='put', decorator=swagger_auto_schema(
-    operation_description="Изменение имени и статуса поставщика"
-))
-@method_decorator(name='patch', decorator=swagger_auto_schema(
-    operation_description="Изменение статуса поставщика",
-))
-class PartnerState(RetrieveUpdateAPIView):
+class PartnerState(mixins.RetrieveModelMixin,
+                   mixins.UpdateModelMixin,
+                   GenericViewSet):
     """
     Класс для работы со статусом поставщика
     """
@@ -121,6 +116,7 @@ class PartnerState(RetrieveUpdateAPIView):
         if obj.user_id != self.request.user.id:
             raise Http404
         return obj
+
 
 @method_decorator(name='update_new', decorator=swagger_auto_schema(
     operation_description="Подтверждение заказа с указанием контакта",
@@ -166,7 +162,7 @@ class BasketView(mixins.CreateModelMixin,
                 request.user.id,
                 f"'Заказ №{is_updated.pk} сформирован'",
                 'Обновление статуса заказа')
-            return Response({'Status': 'Заказ сформирован'})
+            return JsonResponse({'Status': 'Заказ сформирован'})
         return JsonResponse({'Status': 'Неправильные данные по заказу'})
 
     def list(self, request):
