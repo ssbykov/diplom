@@ -50,3 +50,5 @@ wheel==0.37.1
 celery==5.2.7
 django-celery-results==2.4.0
 redis==4.3.4
+pytest-django==4.5.2
+model_bakery==1.9.0

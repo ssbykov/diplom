@@ -6,11 +6,6 @@ from django.utils.translation import gettext_lazy as _
 STATE_CHOICES = (
     ('basket', 'Статус корзины'),
     ('new', 'Новый'),
-    ('confirmed', 'Подтвержден'),
-    ('assembled', 'Собран'),
-    ('sent', 'Отправлен'),
-    ('delivered', 'Доставлен'),
-    ('canceled', 'Отменен'),
 )
 
 USER_TYPE_CHOICES = (
@@ -84,6 +79,7 @@ class Category(models.Model):
     class Meta:
         verbose_name = 'Категория'
         verbose_name_plural = "Список категорий"
+        ordering = ['id']
 
     def __str__(self):
         return self.name

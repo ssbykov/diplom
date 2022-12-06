@@ -57,10 +57,10 @@ class PartnerUpdate(APIView):
     """
 
     @swagger_auto_schema(request_body=openapi.Schema(
-    type=openapi.TYPE_OBJECT,
-    properties={
-        'filename': openapi.Schema(type=openapi.TYPE_STRING, description='string')
-    }
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'filename': openapi.Schema(type=openapi.TYPE_STRING, description='string')
+        }
     ))
     def post(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
