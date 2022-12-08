@@ -21,6 +21,7 @@ from .yasg import urlpatterns as doc_urls
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('accounts/', include('allauth.urls')),
     re_path(r'^activate/(?P<uid>[\w-]+)/(?P<token>[\w-]+)$', UserActivationView.as_view()),
     path('api/v1/', include('backend.urls', namespace='backend')),
     path(r'api/v1/auth/', include('djoser.urls')),

@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'django.contrib.sites',
     'backend.apps.BackendConfig',
     'rest_framework',
     'rest_framework.authtoken',
@@ -50,6 +51,11 @@ INSTALLED_APPS = [
     'djoser',
     'django_celery_results',
     'drf_yasg',
+    'allauth',
+    'allauth.account',
+    'allauth.socialaccount',
+    'allauth.socialaccount.providers.google',
+
 ]
 
 MIDDLEWARE = [
@@ -96,6 +102,33 @@ DATABASES = {
         'PASSWORD': env('DB_PASSWORD')
     }
 }
+
+AUTHENTICATION_BACKENDS = [
+    'django.contrib.auth.backends.ModelBackend',
+    'allauth.account.auth_backends.AuthenticationBackend',
+]
+
+SOCIALACCOUNT_PROVIDERS = {
+    "google": {
+
+        "APP": {
+            "client_id": env('GOOGLE_CLIENT_ID'),
+            "secret": env('GOOGLE_SECRET'),
+            "key": ""
+        },
+        "SCOPE": [
+            "profile",
+            "email",
+        ],
+        "AUTH_PARAMS": {
+            "access_type": "online",
+        }
+    }
+}
+
+ACCOUNT_CONFIRM_EMAIL_ON_GET = True
+ACCOUNT_LOGOUT_REDIRECT_URL = '/accounts/login/'
+LOGIN_REDIRECT_URL = '/accounts/email/'
 
 # Password validation
 # https://docs.djangoproject.com/en/4.1/ref/settings/#auth-password-validators
@@ -208,3 +241,5 @@ SWAGGER_SETTINGS = {
         }
     }
 }
+
+SITE_ID = 1
