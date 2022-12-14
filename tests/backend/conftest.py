@@ -3,14 +3,12 @@ import pytest
 from rest_framework.test import APIClient
 from model_bakery import baker
 
-from backend.models import Category, Contact
+from backend.models import Category, Contact, Shop
 from django.contrib.auth import get_user_model
 from rest_framework.authtoken.models import Token
 
-
-
 user_shop = {
-    'username': 'Мегафон',
+    'username': 'shop',
     'email': 'shop@mail.ru',
     'type': 'shop',
     'is_active': True
@@ -70,9 +68,25 @@ def contact_factory():
 
     return factory
 
-@pytest.fixture(scope='session')
-def celery_config():
-    return {
-        'broker_url': 'amqp://',
-        'result_backend': 'redis://'
-    }
+
+@pytest.fixture
+def shop_factory():
+    def factory(*args, **kwargs):
+        return baker.make(Shop, *args, **kwargs)
+
+    return factory
+
+
+@pytest.fixture
+def category_factory():
+    def factory(*args, **kwargs):
+        return baker.make(Category, *args, **kwargs)
+
+    return factory
+
+# @pytest.fixture(scope='session')
+# def celery_config():
+#     return {
+#         'broker_url': 'amqp://',
+#         'result_backend': 'redis://'
+#     }

@@ -1,5 +1,7 @@
 import pytest
 from django.urls import reverse_lazy
+from tests.backend.conftest import user_shop, user_buyer
+
 
 class TestContacts:
     URL = reverse_lazy('backend:ContactView-list')
@@ -14,19 +16,8 @@ class TestContacts:
         ('city', 'street', 'phone', (200, 201))
     ]
 
-    user_shop = {
-        'username': 'shop',
-        'email': 'shop@mail.ru',
-        'type': 'shop',
-        'is_active': True
-    }
-
-    user_buyer = {
-        'username': 'buyer',
-        'email': 'buyer@mail.ru',
-        'type': 'buyer',
-        'is_active': True
-    }
+    user_shop = dict(user_shop)
+    user_buyer = dict(user_buyer)
 
     @pytest.fixture
     @pytest.mark.django_db
@@ -42,7 +33,7 @@ class TestContacts:
     def contact_data_shop(self, contact_data):
         return contact_data(**self.user_shop)
 
-    # тест получания контактов по пользователю (покупателю)
+    # тест получания контактов по пользователю (магазину)
     @pytest.mark.django_db
     def test_get_contacts(self, client_shop, client_not_log, contact_data_shop):
         response = client_shop.get(self.URL)
@@ -54,7 +45,6 @@ class TestContacts:
                 assert contact[con] == contact_data_shop[i].__dict__[con]
         response = client_not_log.get(self.URL)
         assert response.status_code == 401
-
 
     # тест получания одного контакта по пользователю
     @pytest.mark.django_db
