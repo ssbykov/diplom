@@ -6,7 +6,7 @@ from backend.views import CategoryView, PartnerUpdate, ShopView, ProductInfoView
 
 
 router = routers.DefaultRouter()
-router.register(r'products', ProductInfoView)
+router.register(r'products', ProductInfoView, basename='ProductInfoView')
 router.register(r'order', OrderView, basename='OrderView')
 router.register(r'user/contact', ContactView, basename='ContactView')
 router.register(r'basket', BasketView, basename='BasketView')
