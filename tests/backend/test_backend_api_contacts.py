@@ -24,7 +24,7 @@ class TestContacts:
     def contact_data(self, contact_factory, user):
         def make_contacts(**kwargs):
             usr = user(**kwargs)
-            return contact_factory(_quantity=4, user=usr)
+            return contact_factory(_quantity=6, user=usr)
 
         return make_contacts
 

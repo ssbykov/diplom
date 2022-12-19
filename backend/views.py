@@ -18,7 +18,8 @@ from backend.filters import ProductFilterPrice
 from backend.models import Category, Shop, ProductInfo, Contact, Order, OrderItem
 from backend.permissions import IsOwnerOrReadOnly, IsBuyer
 from backend.serializers import ShopSerializer, CategorySerializer, ProductInfoSerializer, ContactSerializer, \
-    OrderItemSerializer, OrdersListSerializer, OrderNewSerializer, OrderSerializer, OrderItemCreateSerializer
+    OrderItemSerializer, OrdersListSerializer, OrderNewSerializer, OrderSerializer, OrderItemCreateSerializer, \
+    OrderSerializerShop
 from backend.tasks import do_import, sand_mail
 
 
@@ -152,7 +153,7 @@ class BasketView(mixins.CreateModelMixin,
         if not ProductInfo.objects.get(id=product_info).shop.state:
             return JsonResponse({'Status': 'Данный товар недоступен для заказа'})
         instance = OrderItem.objects.filter(product_info=product_info, order_id=basket.id).first()
-        serializer = OrderItemCreateSerializer(data=request.data, context={'order': basket}, instance=instance)
+        serializer = self.get_serializer(data=request.data, context={'order': basket}, instance=instance)
         serializer.is_valid(raise_exception=True)
         serializer.save()
         headers = self.get_success_headers(serializer.data)
@@ -162,7 +163,7 @@ class BasketView(mixins.CreateModelMixin,
     def update_new(self, request, *args, **kwargs):
         is_updated = Order.objects.filter(user_id=self.request.user.id, state='basket').first()
         if is_updated:
-            serializer = OrderNewSerializer(instance=is_updated, data=self.request.data)
+            serializer = self.get_serializer(instance=is_updated, data=self.request.data)
             serializer.is_valid(raise_exception=True)
             serializer.save()
             sand_mail.delay(
@@ -208,7 +209,7 @@ class OrderView(viewsets.ReadOnlyModelViewSet):
     Класс для получения информации по заказам пользователя
     """
 
-    permission_classes = [permissions.IsAuthenticated, IsBuyer]
+    permission_classes = [permissions.IsAuthenticated]
 
     def list(self, queryset):
         queryset = self.get_queryset()
@@ -218,14 +219,20 @@ class OrderView(viewsets.ReadOnlyModelViewSet):
         return JsonResponse({'Status': 'Нет активных заказов'})
 
     def get_serializer(self, *args, **kwargs):
-        if self.action == 'list':
+        if self.action == 'list' and self.request.user.type == 'buyer':
             return OrdersListSerializer(*args, **kwargs)
+        elif self.request.user.type == 'shop':
+            return OrderSerializerShop(*args, **kwargs)
         return OrderSerializer(*args, **kwargs)
 
     def get_queryset(self):
-        queryset = Order.objects.filter(
-            user_id=self.request.user.id).exclude(state='basket').prefetch_related(
-            'ordered_items__product_info__product__category',
-            'ordered_items__product_info__product_parameters__parameter').select_related('contact').annotate(
-            total_sum=Sum(F('ordered_items__quantity') * F('ordered_items__product_info__price'))).distinct()
+        queryset = Order.objects.all().exclude(state='basket').select_related('contact')
+        if self.request.user.type == 'buyer':
+            queryset = queryset.filter(
+                user_id=self.request.user.id).annotate(
+                total_sum=Sum(F('ordered_items__quantity')
+                              * F('ordered_items__product_info__price'))).distinct()
+        else:
+            queryset = queryset.filter(ordered_items__product_info__shop__user_id=self.request.user.id)
+
         return queryset
