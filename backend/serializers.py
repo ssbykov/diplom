@@ -119,3 +119,11 @@ class OrderNewSerializer(serializers.ModelSerializer):
         instance.state = 'new'
         instance.save()
         return instance
+
+    def validate(self, data):
+        items = list(self.instance.ordered_items.all())
+        for item in items:
+            if item.product_info.quantity < item.quantity:
+                raise serializers.ValidationError(f"Недостаточное количество товара id={item.product_info.id}")
+        return data
+
